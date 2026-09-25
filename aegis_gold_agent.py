@@ -15,14 +15,18 @@ MAX_SPREAD_USD = 0.40     # Max allowed spread on Gold
 
 # --- 1. FETCH MARKET DATA & COMPUTE METRICS ---
 def fetch_gold_snapshot():
-    # 15m Candlestick data feed
-    url = "https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval=15m&limit=100"
-    res = requests.get(url, timeout=10).json()
+    # Fetch 15m Candlestick data from Kraken (No US Geo-blocking)
+    url = "https://api.kraken.com/0/public/OHLC?pair=PAXGUSD&interval=15"
+    res = requests.get(url, headers={"User-Agent": "AegisBot/1.0"}, timeout=10).json()
 
-    df = pd.DataFrame(res, columns=[
-        'time', 'open', 'high', 'low', 'close', 'volume',
-        'close_time', 'qav', 'num_trades', 'taker_base', 'taker_quote', 'ignore'
+    # Kraken returns data inside a nested dictionary
+    data_list = res['result']['PAXGUSD']
+
+    df = pd.DataFrame(data_list, columns=[
+        'time', 'open', 'high', 'low', 'close', 'vwap_kraken', 'volume', 'count'
     ])
+    
+    # Convert string prices to floats
     for col in ['open', 'high', 'low', 'close', 'volume']:
         df[col] = df[col].astype(float)
 
@@ -32,7 +36,7 @@ def fetch_gold_snapshot():
     df['ema_50'] = ta.trend.EMAIndicator(df['close'], window=50).ema_indicator()
     df['atr'] = ta.volatility.AverageTrueRange(df['high'], df['low'], df['close'], window=14).average_true_range()
 
-    # Session VWAP
+    # Session VWAP (Calculated manually for precision)
     typical_price = (df['high'] + df['low'] + df['close']) / 3
     df['vwap'] = (typical_price * df['volume']).cumsum() / df['volume'].cumsum()
 
@@ -114,7 +118,7 @@ def send_discord_alert(message):
     payload = {
         "username": "Aegis-Gold Desk",
         "embeds": [{
-            "title": "🚨 XAU/USD Institutional Alert",
+            "title": "🚨 XAU/USD Institutional Alert" if "NO_TRADE" not in message else "Market Scan",
             "description": message,
             "color": color,
             "footer": {
