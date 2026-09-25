@@ -9,38 +9,30 @@ import ta
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-ACCOUNT_BALANCE = 5000.0  # Simulated account balance in USD
-RISK_PER_TRADE = 0.01     # 1% strict risk rule ($50)
-MAX_SPREAD_USD = 0.40     # Max allowed spread on Gold
+ACCOUNT_BALANCE = 5000.0  
+RISK_PER_TRADE = 0.01     
+MAX_SPREAD_USD = 0.40     
 
 # --- 1. FETCH MARKET DATA & COMPUTE METRICS ---
 def fetch_gold_snapshot():
-    # Fetch 15m Candlestick data from Kraken (No US Geo-blocking)
+    # Kraken API (Bypasses US Geo-blocking)
     url = "https://api.kraken.com/0/public/OHLC?pair=PAXGUSD&interval=15"
     res = requests.get(url, headers={"User-Agent": "AegisBot/1.0"}, timeout=10).json()
 
-    # Kraken returns data inside a nested dictionary
     data_list = res['result']['PAXGUSD']
-
-    df = pd.DataFrame(data_list, columns=[
-        'time', 'open', 'high', 'low', 'close', 'vwap_kraken', 'volume', 'count'
-    ])
+    df = pd.DataFrame(data_list, columns=['time', 'open', 'high', 'low', 'close', 'vwap_kraken', 'volume', 'count'])
     
-    # Convert string prices to floats
     for col in ['open', 'high', 'low', 'close', 'volume']:
         df[col] = df[col].astype(float)
 
-    # Technical Indicators
     df['rsi'] = ta.momentum.RSIIndicator(df['close'], window=14).rsi()
     df['ema_20'] = ta.trend.EMAIndicator(df['close'], window=20).ema_indicator()
     df['ema_50'] = ta.trend.EMAIndicator(df['close'], window=50).ema_indicator()
     df['atr'] = ta.volatility.AverageTrueRange(df['high'], df['low'], df['close'], window=14).average_true_range()
 
-    # Session VWAP (Calculated manually for precision)
     typical_price = (df['high'] + df['low'] + df['close']) / 3
     df['vwap'] = (typical_price * df['volume']).cumsum() / df['volume'].cumsum()
 
-    # Fair Value Gap (FVG) Check
     df['bullish_fvg'] = df['low'] > df['high'].shift(2)
     df['bearish_fvg'] = df['high'] < df['low'].shift(2)
 
@@ -66,7 +58,7 @@ def run_ai_evaluation(data):
     Account Balance: ${ACCOUNT_BALANCE} | Risk Per Trade: {RISK_PER_TRADE*100}% (${ACCOUNT_BALANCE * RISK_PER_TRADE}).
     
     RULES:
-    1. Require >= 75% setup confluence and at least 1:2.0 Risk-to-Reward Ratio (RRR).
+    1. Require >= 75% setup confluence and at least 1:2.0 Risk-to-Reward Ratio.
     2. If market is choppy or below 75% conviction, output strictly: NO_TRADE.
     3. Structural Stop Loss only.
     
@@ -107,22 +99,27 @@ def run_ai_evaluation(data):
         return "NO_TRADE"
 
 # --- 3. DISCORD EMBED DISPATCHER ---
-def send_discord_alert(message):
+def send_discord_alert(message, is_test=False):
     if not DISCORD_WEBHOOK_URL:
-        print("Discord Webhook URL missing.")
         return
 
-    is_buy = "BUY" in message.upper()
-    color = 3066993 if is_buy else 15158332  # Green for BUY, Red for SELL
+    # If it's a test message, make it Blue. Otherwise Green/Red for Buy/Sell.
+    if is_test:
+        color = 3447003 # Blue for tests
+        title = "🔧 SYSTEM TEST: Bot is Online"
+    else:
+        is_buy = "BUY" in message.upper()
+        color = 3066993 if is_buy else 15158332
+        title = "🚨 XAU/USD Institutional Alert"
 
     payload = {
         "username": "Aegis-Gold Desk",
         "embeds": [{
-            "title": "🚨 XAU/USD Institutional Alert" if "NO_TRADE" not in message else "Market Scan",
+            "title": title,
             "description": message,
             "color": color,
             "footer": {
-                "text": "Automated Intraday Risk Engine • 1% Capital Risk Rule"
+                "text": "Automated Intraday Risk Engine"
             }
         }]
     }
@@ -133,7 +130,6 @@ def send_discord_alert(message):
 def main():
     snapshot = fetch_gold_snapshot()
 
-    # Pre-trade filter
     if snapshot["spread"] > MAX_SPREAD_USD:
         print(f"Spread too high: ${snapshot['spread']}. Aborting.")
         return
@@ -147,4 +143,9 @@ def main():
         print("Market scanned: No institutional setup. Standing by.")
 
 if __name__ == "__main__":
+    # Check if the user manually clicked the button in GitHub
+    if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+        send_discord_alert("✅ The webhook is perfectly connected! Your GitHub bot is awake and actively scanning the Gold market.", is_test=True)
+    
+    # Run the real market scan immediately after
     main()
