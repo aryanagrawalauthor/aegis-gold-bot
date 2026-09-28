@@ -52,9 +52,10 @@ def fetch_gold_snapshot():
 
 # --- 2. AI REASONING ENGINE ---
 def run_ai_evaluation(data):
-    system_prompt = f"""
+    # Standard string (No f-string), making it immune to {} syntax errors
+    system_prompt = """
     You are 'Aegis-Gold', an institutional Quantitative Commodities Trader.
-    Account Balance: ${ACCOUNT_BALANCE} \vert{} Risk Per Trade: {RISK_PER_TRADE*100}\% (${ACCOUNT_BALANCE * RISK_PER_TRADE}).
+    Account Balance: $5000.00 | Risk Per Trade: 1.0% ($50.00).
     
     You must evaluate the market and ALWAYS return a status report.
     
@@ -80,23 +81,30 @@ def run_ai_evaluation(data):
     • **Suggested Lot Size:** [Calculated based on 1% risk]
     """
 
+    # Safely combine text variables
+    full_text = system_prompt + "\n\nLive Snapshot:\n" + json.dumps(data, indent=2)
+
     payload = {
         "contents": [{
             "parts": [{
-                "text": f"{system_prompt}\n\nLive Snapshot:\n{json.dumps(data, indent=2)}"
+                "text": full_text
             }]
         }]
     }
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-    res = requests.post(url, json=payload, timeout=20).json()
-
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + str(GEMINI_API_KEY)
+    
     try:
+        res = requests.post(url, json=payload, timeout=20).json()
         return res['candidates'][0]['content']['parts'][0]['text']
-    except Exception:
-        # DIAGNOSTIC MODE: Expose the hidden Google API Error
-        error_msg = res.get('error', {}).get('message', str(res))
-        return f"**[🚨 DIAGNOSTIC MODE: API ERROR]**\n• **Action:** SYSTEM FAULT\n• **Hidden Error Details:** `{error_msg}`\n\n*(If it says API key not valid, your GitHub Secret is either missing, empty, or not being passed into the Python script correctly!)*"
+    except Exception as e:
+        # DIAGNOSTIC MODE: Expose the hidden API Error
+        try:
+            error_msg = res.get('error', {}).get('message', str(res))
+        except:
+            error_msg = str(e)
+            
+        return "**[🚨 DIAGNOSTIC MODE: API ERROR]**\n• **Action:** SYSTEM FAULT\n• **Hidden Error Details:** `" + str(error_msg) + "`\n\n*(If it says 'API key not valid', your GitHub Secret is missing or empty!)*"
 
 # --- 3. DISCORD EMBED DISPATCHER ---
 def send_discord_alert(message, is_test=False):
@@ -140,7 +148,7 @@ def main():
     snapshot = fetch_gold_snapshot()
 
     if snapshot["spread"] > MAX_SPREAD_USD:
-        send_discord_alert(f"**[XAU/USD 15-Min Market Scan]**\n• **Current Price:** ${snapshot['current_price']}\n• **Action:** WAITING (Spread too high: ${snapshot['spread']})")
+        send_discord_alert("**[XAU/USD 15-Min Market Scan]**\n• **Current Price:** $" + str(snapshot['current_price']) + "\n• **Action:** WAITING (Spread too high: $" + str(snapshot['spread']) + ")")
         return
 
     ai_decision = run_ai_evaluation(snapshot)
