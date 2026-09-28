@@ -54,7 +54,7 @@ def fetch_gold_snapshot():
 def run_ai_evaluation(data):
     system_prompt = f"""
     You are 'Aegis-Gold', an institutional Quantitative Commodities Trader.
-    Account Balance: ${ACCOUNT_BALANCE} | Risk Per Trade: {RISK_PER_TRADE*100}% (${ACCOUNT_BALANCE * RISK_PER_TRADE}).
+    Account Balance: ${ACCOUNT_BALANCE} \vert{} Risk Per Trade: {RISK_PER_TRADE*100}\% (${ACCOUNT_BALANCE * RISK_PER_TRADE}).
     
     You must evaluate the market and ALWAYS return a status report.
     
@@ -88,14 +88,15 @@ def run_ai_evaluation(data):
         }]
     }
 
-    # UPDATED TO GEMINI 2.5 FLASH ENDPOINT
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     res = requests.post(url, json=payload, timeout=20).json()
 
     try:
         return res['candidates'][0]['content']['parts'][0]['text']
     except Exception:
-        return "**[XAU/USD 15-Min Market Scan]**\n• **Action:** WAITING (Data scan normal, no trigger)"
+        # DIAGNOSTIC MODE: Expose the hidden Google API Error
+        error_msg = res.get('error', {}).get('message', str(res))
+        return f"**[🚨 DIAGNOSTIC MODE: API ERROR]**\n• **Action:** SYSTEM FAULT\n• **Hidden Error Details:** `{error_msg}`\n\n*(If it says API key not valid, your GitHub Secret is either missing, empty, or not being passed into the Python script correctly!)*"
 
 # --- 3. DISCORD EMBED DISPATCHER ---
 def send_discord_alert(message, is_test=False):
@@ -104,7 +105,10 @@ def send_discord_alert(message, is_test=False):
 
     content_tag = ""
 
-    if is_test:
+    if "DIAGNOSTIC MODE" in message.upper():
+        color = 16711680 # Bright Red Error
+        title = "❌ SYSTEM DIAGNOSTIC ALERT"
+    elif is_test:
         color = 3447003
         title = "🔧 SYSTEM TEST: Bot is Online"
     elif "ACTIVE TRADE" in message.upper():
@@ -145,6 +149,6 @@ def main():
 
 if __name__ == "__main__":
     if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
-        send_discord_alert("✅ System Update Complete! API connection restored.", is_test=True)
+        send_discord_alert("✅ Diagnostics loaded. Running market scan...", is_test=True)
     
     main()
