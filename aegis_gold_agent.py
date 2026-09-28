@@ -88,7 +88,8 @@ def run_ai_evaluation(data):
         }]
     }
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # UPDATED TO GEMINI 2.5 FLASH ENDPOINT
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     res = requests.post(url, json=payload, timeout=20).json()
 
     try:
@@ -144,6 +145,6 @@ def main():
 
 if __name__ == "__main__":
     if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
-        send_discord_alert("✅ System Update Complete! Priority alerts enabled for active trades.", is_test=True)
+        send_discord_alert("✅ System Update Complete! API connection restored.", is_test=True)
     
     main()
