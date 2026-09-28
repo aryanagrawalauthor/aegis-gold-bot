@@ -88,20 +88,18 @@ def run_ai_evaluation(data):
         }]
     }
 
-    # UPDATED TO GEMINI 3.1 PRO PREVIEW ENDPOINT
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key={GEMINI_API_KEY}"
+    # UPDATED TO GEMINI 3.8 FLASH ENDPOINT
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={GEMINI_API_KEY}"
+    res = requests.post(url, json=payload, timeout=20)
     
     try:
-        res = requests.post(url, json=payload, timeout=20).json()
-        
-        # Check if the API returned a specific error (e.g., rate limit, model access)
-        if 'error' in res:
-            error_details = res['error'].get('message', 'Unknown API Error')
-            return f"[🚨 DIAGNOSTIC MODE: API ERROR]\n• **Action:** SYSTEM FAULT\n• **Hidden Error Details:** {error_details}"
-            
-        return res['candidates'][0]['content']['parts'][0]['text']
+        res_json = res.json()
+        if 'error' in res_json:
+            error_msg = res_json['error'].get('message', 'Unknown API Error')
+            return f"[🚨 DIAGNOSTIC MODE: API ERROR]\n• **Action:** SYSTEM FAULT\n• **Hidden Error Details:** {error_msg}"
+        return res_json['candidates'][0]['content']['parts'][0]['text']
     except Exception as e:
-        return f"**[XAU/USD 15-Min Market Scan]**\n• **Action:** WAITING (Data scan normal, no trigger)\n• **System Diagnostic:** {str(e)}"
+        return f"[🚨 DIAGNOSTIC MODE: API ERROR]\n• **Action:** SYSTEM FAULT\n• **Hidden Error Details:** {str(e)}"
 
 # --- 3. DISCORD EMBED DISPATCHER ---
 def send_discord_alert(message, is_test=False):
@@ -119,7 +117,7 @@ def send_discord_alert(message, is_test=False):
         title = "🚨 HIGH-CONFLUENCE INSTITUTIONAL SETUP (SCORE CHANCE)"
         content_tag = "@here 🚨 **HIGH-PROBABILITY GOLD SETUP DETECTED!**"
     elif "SYSTEM FAULT" in message.upper():
-        color = 15158332 # Red color for diagnostic errors
+        color = 16711680
         title = "❌ SYSTEM DIAGNOSTIC ALERT"
     else:
         color = 8421504
@@ -154,6 +152,6 @@ def main():
 
 if __name__ == "__main__":
     if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
-        send_discord_alert("✅ System Update Complete! AI Engine upgraded to Gemini 3.1 Pro.", is_test=True)
+        send_discord_alert("✅ System Update Complete! API connection restored to free-tier gemini-3.8-flash.", is_test=True)
     
     main()
