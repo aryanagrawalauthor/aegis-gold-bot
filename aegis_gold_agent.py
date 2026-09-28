@@ -15,7 +15,6 @@ MAX_SPREAD_USD = 0.40
 
 # --- 1. FETCH MARKET DATA & COMPUTE METRICS ---
 def fetch_gold_snapshot():
-    # Kraken API (Bypasses US Geo-blocking)
     url = "https://api.kraken.com/0/public/OHLC?pair=PAXGUSD&interval=15"
     res = requests.get(url, headers={"User-Agent": "AegisBot/1.0"}, timeout=10).json()
 
@@ -57,29 +56,28 @@ def run_ai_evaluation(data):
     You are 'Aegis-Gold', an institutional Quantitative Commodities Trader.
     Account Balance: ${ACCOUNT_BALANCE} | Risk Per Trade: {RISK_PER_TRADE*100}% (${ACCOUNT_BALANCE * RISK_PER_TRADE}).
     
-    RULES:
-    1. Require >= 75% setup confluence and at least 1:2.0 Risk-to-Reward Ratio.
-    2. If market is choppy or below 75% conviction, output strictly: NO_TRADE.
-    3. Structural Stop Loss only.
+    You must evaluate the market and ALWAYS return a status report.
     
-    OUTPUT FORMAT (IF VALID TRADE):
-    [SIGNAL ALERT: XAU/USD INTRADAY]
-    • Bias: [BUY / SELL]
-    • Execution: [Market Execution @ current price OR Limit @ key zone]
-    • Entry: $[Exact Price]
-    • Invalidation (Stop Loss): $[Exact Price]
-    • Target 1 (50% Off + Move SL to Breakeven): $[Exact Price]
-    • Target 2 (Runner): $[Exact Price]
-    • Risk-to-Reward Ratio: [e.g., 1:2.4]
-    • Confluence Score: [__%]
-    • Suggested Lot Size: [Calculated]
+    If confluence is < 75% or the market is choppy, your Action is "WAITING". 
+    If confluence is >= 75% and Risk-to-Reward is >= 1:2.0, your Action is "ACTIVE TRADE".
     
-    [CORE CONFLUENCE]
-    1. Structure: [FVG fill / session sweep]
-    2. Indicators: [RSI / EMA / VWAP alignment]
+    OUTPUT FORMAT:
     
-    [INVALIDATION CRITERIA]
-    • [Exact price level or event that invalidates trade]
+    **[XAU/USD 15-Min Market Scan]**
+    • **Current Price:** $[Insert price from snapshot]
+    • **Session Trend:** [Insert trend from snapshot]
+    • **Confluence Score:** [Evaluate from 0% to 100%]
+    • **Action:** [WAITING or ACTIVE TRADE]
+    • **Market Context:** [1-2 concise sentences on VWAP, EMA, and RSI]
+
+    [IF ACTION IS "ACTIVE TRADE", INCLUDE THE FOLLOWING]
+    • **Bias:** [BUY / SELL]
+    • **Entry:** $[Exact Price]
+    • **Invalidation (Stop Loss):** $[Exact Price]
+    • **Target 1 (50% Off + Breakeven SL):** $[Exact Price]
+    • **Target 2 (Runner):** $[Exact Price]
+    • **Risk-to-Reward:** [e.g., 1:2.2]
+    • **Suggested Lot Size:** [Calculated based on 1% risk]
     """
 
     payload = {
@@ -96,30 +94,36 @@ def run_ai_evaluation(data):
     try:
         return res['candidates'][0]['content']['parts'][0]['text']
     except Exception:
-        return "NO_TRADE"
+        return "**[XAU/USD 15-Min Market Scan]**\n• **Action:** WAITING (Data scan normal, no trigger)"
 
 # --- 3. DISCORD EMBED DISPATCHER ---
 def send_discord_alert(message, is_test=False):
     if not DISCORD_WEBHOOK_URL:
         return
 
-    # If it's a test message, make it Blue. Otherwise Green/Red for Buy/Sell.
+    content_tag = ""
+
     if is_test:
-        color = 3447003 # Blue for tests
+        color = 3447003
         title = "🔧 SYSTEM TEST: Bot is Online"
-    else:
+    elif "ACTIVE TRADE" in message.upper():
         is_buy = "BUY" in message.upper()
         color = 3066993 if is_buy else 15158332
-        title = "🚨 XAU/USD Institutional Alert"
+        title = "🚨 HIGH-CONFLUENCE INSTITUTIONAL SETUP (SCORE CHANCE)"
+        content_tag = "@here 🚨 **HIGH-PROBABILITY GOLD SETUP DETECTED!**"
+    else:
+        color = 8421504
+        title = "⏱️ XAU/USD 15-Min Market Scan"
 
     payload = {
         "username": "Aegis-Gold Desk",
+        "content": content_tag,
         "embeds": [{
             "title": title,
             "description": message,
             "color": color,
             "footer": {
-                "text": "Automated Intraday Risk Engine"
+                "text": "Automated Intraday Risk Engine • 1% Capital Risk Rule"
             }
         }]
     }
@@ -131,21 +135,15 @@ def main():
     snapshot = fetch_gold_snapshot()
 
     if snapshot["spread"] > MAX_SPREAD_USD:
-        print(f"Spread too high: ${snapshot['spread']}. Aborting.")
+        send_discord_alert(f"**[XAU/USD 15-Min Market Scan]**\n• **Current Price:** ${snapshot['current_price']}\n• **Action:** WAITING (Spread too high: ${snapshot['spread']})")
         return
 
     ai_decision = run_ai_evaluation(snapshot)
-
-    if "NO_TRADE" not in ai_decision:
-        send_discord_alert(ai_decision)
-        print("Valid trade found! Alert sent to Discord.")
-    else:
-        print("Market scanned: No institutional setup. Standing by.")
+    send_discord_alert(ai_decision)
+    print("Market scan complete. Alert sent to Discord.")
 
 if __name__ == "__main__":
-    # Check if the user manually clicked the button in GitHub
     if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
-        send_discord_alert("✅ The webhook is perfectly connected! Your GitHub bot is awake and actively scanning the Gold market.", is_test=True)
+        send_discord_alert("✅ System Update Complete! Priority alerts enabled for active trades.", is_test=True)
     
-    # Run the real market scan immediately after
     main()
