@@ -52,10 +52,9 @@ def fetch_gold_snapshot():
 
 # --- 2. AI REASONING ENGINE ---
 def run_ai_evaluation(data):
-    # Standard string (No f-string), making it immune to {} syntax errors
-    system_prompt = """
+    system_prompt = f"""
     You are 'Aegis-Gold', an institutional Quantitative Commodities Trader.
-    Account Balance: $5000.00 | Risk Per Trade: 1.0% ($50.00).
+    Account Balance: ${ACCOUNT_BALANCE} | Risk Per Trade: {RISK_PER_TRADE*100}% (${ACCOUNT_BALANCE * RISK_PER_TRADE}).
     
     You must evaluate the market and ALWAYS return a status report.
     
@@ -81,30 +80,28 @@ def run_ai_evaluation(data):
     • **Suggested Lot Size:** [Calculated based on 1% risk]
     """
 
-    # Safely combine text variables
-    full_text = system_prompt + "\n\nLive Snapshot:\n" + json.dumps(data, indent=2)
-
     payload = {
         "contents": [{
             "parts": [{
-                "text": full_text
+                "text": f"{system_prompt}\n\nLive Snapshot:\n{json.dumps(data, indent=2)}"
             }]
         }]
     }
 
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + str(GEMINI_API_KEY)
+    # UPDATED TO GEMINI 3.1 PRO PREVIEW ENDPOINT
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key={GEMINI_API_KEY}"
     
     try:
         res = requests.post(url, json=payload, timeout=20).json()
+        
+        # Check if the API returned a specific error (e.g., rate limit, model access)
+        if 'error' in res:
+            error_details = res['error'].get('message', 'Unknown API Error')
+            return f"[🚨 DIAGNOSTIC MODE: API ERROR]\n• **Action:** SYSTEM FAULT\n• **Hidden Error Details:** {error_details}"
+            
         return res['candidates'][0]['content']['parts'][0]['text']
     except Exception as e:
-        # DIAGNOSTIC MODE: Expose the hidden API Error
-        try:
-            error_msg = res.get('error', {}).get('message', str(res))
-        except:
-            error_msg = str(e)
-            
-        return "**[🚨 DIAGNOSTIC MODE: API ERROR]**\n• **Action:** SYSTEM FAULT\n• **Hidden Error Details:** `" + str(error_msg) + "`\n\n*(If it says 'API key not valid', your GitHub Secret is missing or empty!)*"
+        return f"**[XAU/USD 15-Min Market Scan]**\n• **Action:** WAITING (Data scan normal, no trigger)\n• **System Diagnostic:** {str(e)}"
 
 # --- 3. DISCORD EMBED DISPATCHER ---
 def send_discord_alert(message, is_test=False):
@@ -113,10 +110,7 @@ def send_discord_alert(message, is_test=False):
 
     content_tag = ""
 
-    if "DIAGNOSTIC MODE" in message.upper():
-        color = 16711680 # Bright Red Error
-        title = "❌ SYSTEM DIAGNOSTIC ALERT"
-    elif is_test:
+    if is_test:
         color = 3447003
         title = "🔧 SYSTEM TEST: Bot is Online"
     elif "ACTIVE TRADE" in message.upper():
@@ -124,6 +118,9 @@ def send_discord_alert(message, is_test=False):
         color = 3066993 if is_buy else 15158332
         title = "🚨 HIGH-CONFLUENCE INSTITUTIONAL SETUP (SCORE CHANCE)"
         content_tag = "@here 🚨 **HIGH-PROBABILITY GOLD SETUP DETECTED!**"
+    elif "SYSTEM FAULT" in message.upper():
+        color = 15158332 # Red color for diagnostic errors
+        title = "❌ SYSTEM DIAGNOSTIC ALERT"
     else:
         color = 8421504
         title = "⏱️ XAU/USD 15-Min Market Scan"
@@ -148,7 +145,7 @@ def main():
     snapshot = fetch_gold_snapshot()
 
     if snapshot["spread"] > MAX_SPREAD_USD:
-        send_discord_alert("**[XAU/USD 15-Min Market Scan]**\n• **Current Price:** $" + str(snapshot['current_price']) + "\n• **Action:** WAITING (Spread too high: $" + str(snapshot['spread']) + ")")
+        send_discord_alert(f"**[XAU/USD 15-Min Market Scan]**\n• **Current Price:** ${snapshot['current_price']}\n• **Action:** WAITING (Spread too high: ${snapshot['spread']})")
         return
 
     ai_decision = run_ai_evaluation(snapshot)
@@ -157,6 +154,6 @@ def main():
 
 if __name__ == "__main__":
     if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
-        send_discord_alert("✅ Diagnostics loaded. Running market scan...", is_test=True)
+        send_discord_alert("✅ System Update Complete! AI Engine upgraded to Gemini 3.1 Pro.", is_test=True)
     
     main()
